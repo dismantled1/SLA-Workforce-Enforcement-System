@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLA Enforcement System</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Variables ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #f4f3f0;
+  --surface:  #ffffff;
+  --border:   #d8d5cf;
+  --text:     #1a1916;
+  --muted:    #7a7772;
+  --accent:   #1a1916;
+
+  --critical: #c0392b;
+  --high:     #d4670a;
+  --medium:   #b5890f;
+  --low:      #2e7d50;
+
+  --critical-bg: #fdf1f0;
+  --high-bg:     #fef5ed;
+  --medium-bg:   #fefaed;
+  --low-bg:      #f0faf4;
+
+  --escalated-bg: #fff8f0;
+  --admin-bg:     #fff0f0;
+
+  --sidebar-w: 220px;
+  --header-h:  56px;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ── */
+.header {
+  height: var(--header-h);
+  background: var(--text);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  justify-content: space-between;
+}
+.header-brand { display: flex; align-items: center; gap: 10px; }
+.header-brand .dot {
+  width: 8px; height: 8px;
+  background: #e74c3c;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.header-brand h1 { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.header-role { font-family: var(--mono); font-size: 11px; color: #aaa; display: flex; align-items: center; gap: 8px; }
+.role-badge {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.role-select {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.3);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+}
+.role-select option { background: #1a1916; }
+
+/* ── Layout ── */
+.layout { display: flex; flex: 1; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: var(--header-h);
+  height: calc(100vh - var(--header-h));
+  overflow-y: auto;
+}
+.sidebar-section { padding: 4px 16px 2px; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 0;
+  font-size: 13px;
+  color: var(--muted);
+  border-left: 2px solid transparent;
+  transition: all .15s;
+  user-select: none;
+}
+.nav-item:hover { background: var(--bg); color: var(--text); }
+.nav-item.active { background: var(--bg); color: var(--text); border-left-color: var(--text); font-weight: 500; }
+.nav-item .count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  min-width: 20px;
+  text-align: center;
+}
+.nav-item .count.alert { background: #fde8e6; color: var(--critical); }
+
+/* ── Main ── */
+.main { flex: 1; padding: 24px; overflow-y: auto; }
+
+/* ── Stats Bar ── */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.stat-label { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.stat-value { font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1; }
+.stat-card.breach .stat-value { color: var(--critical); }
+.stat-card.escalated-stat .stat-value { color: var(--high); }
+
+/* ── Section Header ── */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.section-title { font-size: 14px; font-weight: 600; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  border-radius: 4px; cursor: pointer; border: 1px solid;
+  transition: all .15s;
+}
+.btn-primary {
+  background: var(--text); color: #fff; border-color: var(--text);
+}
+.btn-primary:hover { background: #333; }
+.btn-ghost {
+  background: transparent; color: var(--text); border-color: var(--border);
+}
+.btn-ghost:hover { background: var(--bg); }
+.btn-danger { background: var(--critical); color: #fff; border-color: var(--critical); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+/* ── Filters ── */
+.filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-chip {
+  padding: 5px 12px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: 20px; cursor: pointer; background: var(--surface);
+  transition: all .15s; font-family: var(--mono);
+}
+.filter-chip:hover { border-color: var(--text); }
+.filter-chip.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+/* ── Complaint Table ── */
+.complaint-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.table-head {
+  display: grid;
+  grid-template-columns: 80px 1fr 90px 110px 160px 100px 80px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted);
+  gap: 12px;
+}
+.complaint-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 90px 110px 160px 100px 80px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 12px;
+  transition: background .12s;
+  cursor: pointer;
+}
+.complaint-row:last-child { border-bottom: none; }
+.complaint-row:hover { background: var(--bg); }
+.complaint-row.breached { background: #fff8f8; }
+.complaint-row.admin_escalated { background: var(--admin-bg); }
+
+.id-cell { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.title-cell { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title-cell .desc-preview { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+/* Priority Badge */
+.priority-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 3px;
+  font-size: 11px; font-weight: 600; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.priority-badge.critical { background: var(--critical-bg); color: var(--critical); }
+.priority-badge.high     { background: var(--high-bg); color: var(--high); }
+.priority-badge.medium   { background: var(--medium-bg); color: var(--medium); }
+.priority-badge.low      { background: var(--low-bg); color: var(--low); }
+
+/* Status Badge */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 3px;
+  font-size: 11px; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.status-badge.open        { background: #eef2ff; color: #3730a3; }
+.status-badge.in_progress { background: #f0fdf4; color: #15803d; }
+.status-badge.escalated   { background: var(--high-bg); color: var(--high); }
+.status-badge.admin_escalated { background: var(--critical-bg); color: var(--critical); }
+.status-badge.resolved    { background: #f0fdf4; color: #15803d; font-weight: 600; }
+.status-badge.closed      { background: var(--bg); color: var(--muted); }
+
+/* SLA Timer */
+.sla-cell { font-family: var(--mono); font-size: 12px; }
+.sla-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; }
+.sla-bar { height: 4px; border-radius: 2px; transition: width .5s; }
+.sla-bar.ok     { background: var(--low); }
+.sla-bar.warn   { background: var(--medium); }
+.sla-bar.danger { background: var(--high); }
+.sla-bar.breach { background: var(--critical); }
+
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.4);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal {
+  background: var(--surface);
+  border-radius: 8px;
+  width: 100%; max-width: 600px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+}
+.modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.modal-title { font-size: 16px; font-weight: 600; }
+.modal-id { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 2px; }
+.modal-body { padding: 20px 24px; }
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+
+/* ── Form ── */
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.form-input, .form-textarea, .form-select {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 4px;
+  font-family: var(--sans); font-size: 13px; color: var(--text);
+  background: var(--surface);
+  outline: none; transition: border-color .15s;
+}
+.form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--text); }
+.form-textarea { resize: vertical; min-height: 80px; }
+.priority-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+}
+.priority-option { display: none; }
+.priority-label {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 8px; border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; transition: all .15s; text-align: center;
+  gap: 4px; font-size: 12px; font-weight: 500;
+}
+.priority-label:hover { border-color: var(--text); }
+.priority-option:checked + .priority-label { border-width: 2px; }
+.priority-option:checked + .priority-label.critical { border-color: var(--critical); background: var(--critical-bg); color: var(--critical); }
+.priority-option:checked + .priority-label.high     { border-color: var(--high); background: var(--high-bg); color: var(--high); }
+.priority-option:checked + .priority-label.medium   { border-color: var(--medium); background: var(--medium-bg); color: var(--medium); }
+.priority-option:checked + .priority-label.low      { border-color: var(--low); background: var(--low-bg); color: var(--low); }
+.priority-label .sla-hint { font-size: 10px; opacity: .7; font-family: var(--mono); }
+
+/* ── Escalation Timeline ── */
+.escalation-item {
+  display: flex; gap: 12px; padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12px;
+}
+.escalation-item:last-child { border-bottom: none; }
+.esc-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 3px; flex-shrink: 0;
+}
+.esc-dot.supervisor { background: var(--high); }
+.esc-dot.admin      { background: var(--critical); }
+.esc-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* ── SLA Info ── */
+.sla-info-box {
+  background: var(--bg); border-radius: 6px; padding: 14px 16px;
+  margin-bottom: 16px;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.sla-info-item .label { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.sla-info-item .value { font-family: var(--mono); font-size: 13px; margin-top: 2px; }
+.value.breach { color: var(--critical); font-weight: 600; }
+
+/* ── Empty State ── */
+.empty-state {
+  text-align: center; padding: 48px 24px; color: var(--muted);
+}
+.empty-state .icon { font-size: 32px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+/* ── Alert Banner ── */
+.alert-banner {
+  padding: 10px 16px; border-radius: 4px;
+  font-size: 13px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.alert-banner.warn { background: var(--high-bg); color: var(--high); border: 1px solid #f5a94a; }
+.alert-banner.error { background: var(--critical-bg); color: var(--critical); border: 1px solid #e88; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--text); color: #fff;
+  padding: 12px 18px; border-radius: 6px;
+  font-size: 13px; z-index: 500;
+  transform: translateY(80px); opacity: 0;
+  transition: all .25s;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+
+/* ── Page Views ── */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ── Report View ── */
+.report-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 20px; margin-bottom: 16px;
+}
+.report-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.report-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.report-row:last-child { border-bottom: none; }
+.report-row .val { font-family: var(--mono); font-weight: 600; }
+
+/* Close btn */
+.close-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 18px; color: var(--muted); padding: 0 4px;
+  line-height: 1;
+}
+.close-btn:hover { color: var(--text); }
+
+/* Detail notes */
+.notes-list { margin-top: 8px; }
+.note-item {
+  background: var(--bg); border-radius: 4px; padding: 8px 12px;
+  font-size: 12px; margin-bottom: 6px;
+}
+.note-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* ── Mobile Bottom Nav ── */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 150;
+  padding: 6px 0 env(safe-area-inset-bottom, 6px);
+}
+.bottom-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
+.bnav-item {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 6px 4px 2px;
+  font-size: 10px; color: var(--muted);
+  cursor: pointer; transition: color .15s;
+  user-select: none; position: relative;
+  gap: 2px;
+}
+.bnav-item .bnav-icon { font-size: 18px; line-height: 1; }
+.bnav-item.active { color: var(--text); }
+.bnav-item.active .bnav-label { font-weight: 600; }
+.bnav-badge {
+  position: absolute; top: 4px; right: calc(50% - 14px);
+  background: var(--critical); color: #fff;
+  font-size: 9px; font-family: var(--mono);
+  border-radius: 8px; padding: 1px 4px;
+  min-width: 14px; text-align: center;
+  line-height: 1.4;
+}
+
+/* ── Mobile FAB ── */
+.fab {
+  display: none;
+  position: fixed;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  right: 20px;
+  width: 52px; height: 52px;
+  background: var(--text); color: #fff;
+  border: none; border-radius: 50%;
+  font-size: 22px; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,.22);
+  z-index: 140;
+  display: none;
+  align-items: center; justify-content: center;
+  transition: transform .15s;
+}
+.fab:active { transform: scale(.93); }
+
+/* ── Complaint Cards (mobile) ── */
+.complaint-cards { display: none; flex-direction: column; gap: 10px; }
+.complaint-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: box-shadow .15s;
+  border-left: 3px solid var(--border);
+}
+.complaint-card:active { box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+.complaint-card.priority-critical { border-left-color: var(--critical); }
+.complaint-card.priority-high     { border-left-color: var(--high); }
+.complaint-card.priority-medium   { border-left-color: var(--medium); }
+.complaint-card.priority-low      { border-left-color: var(--low); }
+.complaint-card.breached          { background: #fff8f8; }
+.complaint-card.admin_escalated   { background: var(--admin-bg); }
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; gap: 8px; }
+.card-title { font-size: 13px; font-weight: 600; flex: 1; line-height: 1.4; }
+.card-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.card-desc { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; }
+.card-time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.card-sla { font-family: var(--mono); font-size: 11px; }
+.card-sla.breach { color: var(--critical); font-weight: 600; }
+
+/* ── Tablet (sidebar icon-only) ── */
+@media (max-width: 1024px) and (min-width: 641px) {
+  :root { --sidebar-w: 56px; }
+  .sidebar-section { display: none; }
+  .nav-item {
+    padding: 12px 0;
+    justify-content: center;
+    font-size: 0; /* hide text nodes */
+    gap: 0;
+  }
+  .nav-item > span:first-child { font-size: 18px; }
+  .nav-item .count { display: none; }
+}
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  :root { --header-h: 50px; }
+
+  .header { padding: 0 16px; }
+  .header-brand h1 { font-size: 11px; }
+  .header-role span { display: none; }
+
+  /* Hide sidebar, show bottom nav */
+  .sidebar { display: none; }
+  .bottom-nav { display: block; }
+
+  /* FAB for new complaint */
+  .fab { display: flex; }
+
+  /* Main padding + bottom nav clearance */
+  .main { padding: 16px 14px 80px; }
+
+  /* Stats bar: 2 cols on mobile */
+  .stats-bar { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .stat-card { padding: 12px; }
+  .stat-value { font-size: 22px; }
+
+  /* Section header */
+  .section-header { flex-wrap: wrap; gap: 8px; }
+  .section-header .btn { display: none; } /* hidden since FAB handles it */
+
+  /* Hide desktop table, show cards */
+  .complaint-table { display: none; }
+  .complaint-cards { display: flex; }
+
+  /* Priority grid: 2×2 on mobile */
+  .priority-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Form card: full width */
+  #view-new > div:last-child { padding: 16px; }
+
+  /* Modal: full-screen on mobile */
+  .modal-backdrop { padding: 0; align-items: flex-end; }
+  .modal {
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh;
+    width: 100%;
+    max-width: 100%;
+  }
+  .modal-footer { flex-direction: column; gap: 8px; }
+  .modal-footer .btn { width: 100%; justify-content: center; }
+
+  /* Toast: bottom center above nav */
+  .toast { bottom: 74px; right: 14px; left: 14px; text-align: center; }
+
+  /* Filters: scrollable row */
+  .filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .filters::-webkit-scrollbar { display: none; }
+
+  /* Report rows: stack on small */
+  .report-row { flex-direction: column; gap: 4px; }
+  .report-row .val { font-size: 14px; }
+
+  /* SLA info box: 2 col stays */
+  .sla-info-box { grid-template-columns: 1fr 1fr; }
+
+  /* Alert banners */
+  .alert-banner { font-size: 12px; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="header">
+  <div class="header-brand">
+    <div class="dot"></div>
+    <h1>SLA Enforcement System</h1>
+  </div>
+  <div class="header-role">
+    <span>Viewing as:</span>
+    <select class="role-select" id="roleSelect" onchange="setRole(this.value)">
+      <option value="agent">Agent</option>
+      <option value="supervisor">Supervisor</option>
+      <option value="admin">Admin</option>
+    </select>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-section">Menu</div>
+    <div class="nav-item active" onclick="showView('dashboard')">
+      <span>📋</span> Dashboard
+    </div>
+    <div class="nav-item" onclick="showView('new')">
+      <span>➕</span> New Complaint
+    </div>
+
+    <div class="sidebar-section">Complaints</div>
+    <div class="nav-item" onclick="showView('all')">
+      <span>📂</span> All Complaints
+      <span class="count" id="countAll">0</span>
+    </div>
+    <div class="nav-item" onclick="showView('open')">
+      <span>🔵</span> Open
+      <span class="count" id="countOpen">0</span>
+    </div>
+    <div class="nav-item" onclick="showView('escalated')">
+      <span>⚠️</span> Escalated
+      <span class="count alert" id="countEscalated">0</span>
+    </div>
+    <div class="nav-item" onclick="showView('resolved')">
+      <span>✅</span> Resolved
+      <span class="count" id="countResolved">0</span>
+    </div>
+
+    <div class="sidebar-section">Reports</div>
+    <div class="nav-item" onclick="showView('report')">
+      <span>📊</span> SLA Report
+    </div>
+  </nav>
+
+  <!-- ── Main Content ── -->
+  <main class="main">
+
+    <!-- Dashboard View -->
+    <div class="view active" id="view-dashboard">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Dashboard</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">Live SLA monitoring</div>
+        </div>
+        <button class="btn btn-primary" onclick="showView('new')">+ New Complaint</button>
+      </div>
+
+      <div class="stats-bar" id="statsBar"></div>
+
+      <div id="adminAlertBanner"></div>
+      <div id="supervisorAlertBanner"></div>
+
+      <div class="section-header" style="margin-top:8px;">
+        <div class="section-title" style="font-size:13px;">Recent Complaints</div>
+      </div>
+      <div id="dashboardTable"></div>
+    </div>
+
+    <!-- New Complaint View -->
+    <div class="view" id="view-new">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Register Complaint</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">A timer will start immediately upon submission</div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px;max-width:560px;">
+        <div class="form-group">
+          <label class="form-label">Complaint Title *</label>
+          <input class="form-input" id="newTitle" placeholder="Brief summary of the issue…" maxlength="120">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description *</label>
+          <textarea class="form-textarea" id="newDesc" placeholder="Describe the issue in detail — what happened, when, who's affected…" style="min-height:100px;"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority *</label>
+          <div class="priority-grid">
+            <div>
+              <input type="radio" name="priority" id="p-critical" value="critical" class="priority-option">
+              <label for="p-critical" class="priority-label critical">
+                🔴 Critical
+                <span class="sla-hint">1 hour</span>
+              </label>
+            </div>
+            <div>
+              <input type="radio" name="priority" id="p-high" value="high" class="priority-option">
+              <label for="p-high" class="priority-label high">
+                🟠 High
+                <span class="sla-hint">24 hours</span>
+              </label>
+            </div>
+            <div>
+              <input type="radio" name="priority" id="p-medium" value="medium" class="priority-option" checked>
+              <label for="p-medium" class="priority-label medium">
+                🟡 Medium
+                <span class="sla-hint">72 hours</span>
+              </label>
+            </div>
+            <div>
+              <input type="radio" name="priority" id="p-low" value="low" class="priority-option">
+              <label for="p-low" class="priority-label low">
+                🟢 Low
+                <span class="sla-hint">7 days</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary" onclick="submitComplaint()">Submit Complaint</button>
+          <button class="btn btn-ghost" onclick="showView('dashboard')">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- List Views (all / open / escalated / resolved) -->
+    <div class="view" id="view-all">
+      <div class="section-header">
+        <div class="section-title">All Complaints</div>
+        <button class="btn btn-primary btn-sm" onclick="showView('new')">+ New</button>
+      </div>
+      <div class="filters" id="filterBar">
+        <div class="filter-chip active" onclick="setFilter('all',this)">All</div>
+        <div class="filter-chip" onclick="setFilter('critical',this)">Critical</div>
+        <div class="filter-chip" onclick="setFilter('high',this)">High</div>
+        <div class="filter-chip" onclick="setFilter('medium',this)">Medium</div>
+        <div class="filter-chip" onclick="setFilter('low',this)">Low</div>
+      </div>
+      <div id="allTable"></div>
+    </div>
+
+    <div class="view" id="view-open">
+      <div class="section-header">
+        <div class="section-title">Open Complaints</div>
+      </div>
+      <div id="openTable"></div>
+    </div>
+
+    <div class="view" id="view-escalated">
+      <div class="section-header">
+        <div class="section-title">Escalated Complaints</div>
+      </div>
+      <div id="escalatedTable"></div>
+    </div>
+
+    <div class="view" id="view-resolved">
+      <div class="section-header">
+        <div class="section-title">Resolved Complaints</div>
+      </div>
+      <div id="resolvedTable"></div>
+    </div>
+
+    <!-- Report View -->
+    <div class="view" id="view-report">
+      <div class="section-header">
+        <div class="section-title">SLA Report</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);" id="reportDate"></div>
+      </div>
+      <div id="reportContent"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Complaint Detail Modal -->
+<div class="modal-backdrop" id="modalBackdrop" style="display:none;" onclick="closeModal(event)">
+  <div class="modal" id="modalBox" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-id" id="modalId"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Mobile Bottom Nav -->
+<nav class="bottom-nav" id="bottomNav">
+  <div class="bottom-nav-inner">
+    <div class="bnav-item active" id="bnav-dashboard" onclick="showView('dashboard')">
+      <span class="bnav-icon">📋</span>
+      <span class="bnav-label">Home</span>
+    </div>
+    <div class="bnav-item" id="bnav-open" onclick="showView('open')">
+      <span class="bnav-icon">🔵</span>
+      <span class="bnav-label">Open</span>
+    </div>
+    <div class="bnav-item" id="bnav-escalated" onclick="showView('escalated')">
+      <span class="bnav-icon">⚠️</span>
+      <span class="bnav-label">Escalated</span>
+      <span class="bnav-badge" id="bnavBadge" style="display:none">0</span>
+    </div>
+    <div class="bnav-item" id="bnav-all" onclick="showView('all')">
+      <span class="bnav-icon">📂</span>
+      <span class="bnav-label">All</span>
+    </div>
+    <div class="bnav-item" id="bnav-report" onclick="showView('report')">
+      <span class="bnav-icon">📊</span>
+      <span class="bnav-label">Report</span>
+    </div>
+  </div>
+</nav>
+
+<!-- FAB -->
+<button class="fab" id="fab" onclick="showView('new')" title="New Complaint">＋</button>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let complaints = [];
+let currentRole = 'agent';
+let activeFilter = 'all';
+let refreshInterval = null;
+const BACKEND = 'http://localhost:8765';
+
+// SLA hours per priority (mirrored from backend)
+const SLA_HOURS = { critical: 1, high: 24, medium: 72, low: 168 };
+
+// ── Mock data (used when backend not available) ────────────────────────────
+function generateMockComplaints() {
+  const now = Date.now();
+  function makeDeadline(priority, hoursAgo) {
+    const sla = SLA_HOURS[priority] * 3600000;
+    const created = now - hoursAgo * 3600000;
+    return { created, deadline: created + sla };
+  }
+  const items = [
+    { id:'A1B2C3', title:'Login portal completely down', desc:'All agents unable to authenticate to the CRM system since 08:00. Affects 120 users.', priority:'critical', status:'escalated', ...makeDeadline('critical', 1.5) },
+    { id:'D4E5F6', title:'Report export fails with 500 error', desc:'Monthly compliance report fails. Cannot export PDF or CSV. Blocking end-of-month close.', priority:'high', status:'open', ...makeDeadline('high', 6) },
+    { id:'G7H8I9', title:'Dashboard loads slowly', desc:'Dashboard takes 25+ seconds to load after login. Users are complaining about productivity loss.', priority:'medium', status:'in_progress', ...makeDeadline('medium', 30) },
+    { id:'J0K1L2', title:'Typo in email template', desc:'Welcome email has incorrect company address in footer. Minor brand issue.', priority:'low', status:'open', ...makeDeadline('low', 12) },
+    { id:'M3N4O5', title:'Data sync failure overnight', desc:'Nightly data sync job failed. Records from 2024-03-19 are missing from warehouse.', priority:'critical', status:'admin_escalated', ...makeDeadline('critical', 2.5) },
+    { id:'P6Q7R8', title:'Password reset not sending email', desc:'Users unable to reset passwords. Email delivery broken — possibly SMTP config.', priority:'high', status:'escalated', ...makeDeadline('high', 28) },
+    { id:'S9T0U1', title:'Invoice totals incorrect', desc:'Invoice calculation rounding error for orders above $10,000.', priority:'high', status:'open', ...makeDeadline('high', 5) },
+    { id:'V2W3X4', title:'Old logo on login screen', desc:'Outdated company logo showing on login page. New branding not deployed.', priority:'low', status:'resolved', ...makeDeadline('low', 20) },
+  ];
+
+  return items.map(item => {
+    const remainMs = item.deadline - now;
+    const totalMs = SLA_HOURS[item.priority] * 3600000;
+    const elapsedMs = now - item.created;
+    const pct = Math.min(100, (elapsedMs / totalMs) * 100);
+    const isBreached = remainMs < 0 && item.status !== 'resolved' && item.status !== 'closed';
+    const escalations = [];
+    if (item.status === 'escalated' || item.status === 'admin_escalated') {
+      escalations.push({ from_role: 'agent', to_role: 'supervisor', reason: 'SLA breach — auto-escalated', timestamp: new Date(item.deadline).toISOString() });
+    }
+    if (item.status === 'admin_escalated') {
+      escalations.push({ from_role: 'supervisor', to_role: 'admin', reason: 'Supervisor timeout — escalated to Admin', timestamp: new Date(item.deadline + 900000).toISOString() });
+    }
+    return {
+      id: item.id, title: item.title, description: item.desc,
+      priority: item.priority, status: item.status,
+      created_at: new Date(item.created).toISOString(),
+      deadline: new Date(item.deadline).toISOString(),
+      remaining_seconds: remainMs / 1000,
+      progress_pct: pct,
+      is_breached: isBreached,
+      escalations,
+      notes: [],
+      assigned_to: 'agent_01'
+    };
+  });
+}
+
+// ── Data Loading ───────────────────────────────────────────────────────────
+async function loadComplaints() {
+  try {
+    const r = await fetch(`${BACKEND}/api/complaints`, { signal: AbortSignal.timeout(2000) });
+    if (!r.ok) throw new Error();
+    complaints = await r.json();
+  } catch {
+    // Backend not running — use rich mock data
+    if (complaints.length === 0) complaints = generateMockComplaints();
+    else {
+      // Update live timers on mock data
+      const now = Date.now();
+      complaints = complaints.map(c => {
+        const created = new Date(c.created_at).getTime();
+        const deadline = new Date(c.deadline).getTime();
+        const totalMs = SLA_HOURS[c.priority] * 3600000;
+        const remainMs = deadline - now;
+        const elapsedMs = now - created;
+        return {
+          ...c,
+          remaining_seconds: remainMs / 1000,
+          progress_pct: Math.min(100, (elapsedMs / totalMs) * 100),
+          is_breached: remainMs < 0 && c.status !== 'resolved' && c.status !== 'closed'
+        };
+      });
+      // Auto-escalate in mock
+      complaints = complaints.map(c => {
+        if (c.is_breached && c.status === 'open') {
+          return { ...c, status: 'escalated', escalations: [{ from_role:'agent', to_role:'supervisor', reason:'Auto SLA breach', timestamp: c.deadline }] };
+        }
+        return c;
+      });
+    }
+  }
+  renderAll();
+}
+
+async function submitToBackend(title, desc, priority) {
+  try {
+    const r = await fetch(`${BACKEND}/api/complaints`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description: desc, priority }),
+      signal: AbortSignal.timeout(2000)
+    });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+
+async function updateBackendStatus(id, status, note) {
+  try {
+    await fetch(`${BACKEND}/api/complaints/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, note }),
+      signal: AbortSignal.timeout(2000)
+    });
+  } catch {}
+}
+
+async function escalateBackend(id, from_role, to_role, reason) {
+  try {
+    await fetch(`${BACKEND}/api/complaints/${id}/escalate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_role, to_role, reason }),
+      signal: AbortSignal.timeout(2000)
+    });
+  } catch {}
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function formatTime(sec) {
+  if (sec <= 0) return 'Breached';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 48) return `${Math.floor(h/24)}d ${h%24}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s}s`;
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+function slaBarClass(pct, breached) {
+  if (breached) return 'breach';
+  if (pct > 80) return 'danger';
+  if (pct > 50) return 'warn';
+  return 'ok';
+}
+
+function priorityBadge(p) {
+  const icons = { critical:'🔴', high:'🟠', medium:'🟡', low:'🟢' };
+  return `<span class="priority-badge ${p}">${icons[p]} ${p}</span>`;
+}
+
+function statusBadge(s) {
+  const labels = { open:'Open', in_progress:'In Progress', escalated:'Escalated', admin_escalated:'Admin', resolved:'Resolved', closed:'Closed' };
+  return `<span class="status-badge ${s}">${labels[s]||s}</span>`;
+}
+
+function setRole(role) {
+  currentRole = role;
+  renderAll();
+  toast(`Switched to ${role} view`);
+}
+
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('#filterBar .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderAllTable();
+}
+
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelector(`#view-${v}`).classList.add('active');
+  // Sidebar
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.textContent.toLowerCase().includes(v === 'all' ? 'all' : v === 'new' ? 'new' : v)) el.classList.add('active');
+  });
+  // Bottom nav
+  document.querySelectorAll('.bnav-item').forEach(el => el.classList.remove('active'));
+  const bnavMap = { dashboard:'bnav-dashboard', open:'bnav-open', escalated:'bnav-escalated', all:'bnav-all', report:'bnav-report' };
+  if (bnavMap[v]) document.getElementById(bnavMap[v])?.classList.add('active');
+  // FAB: hide on new complaint view
+  const fab = document.getElementById('fab');
+  if (fab) fab.style.display = v === 'new' ? 'none' : 'flex';
+
+  if (v === 'report') renderReport();
+  if (v === 'all') renderAllTable();
+  if (v === 'open') renderFilteredTable('openTable', c => ['open','in_progress'].includes(c.status));
+  if (v === 'escalated') renderFilteredTable('escalatedTable', c => ['escalated','admin_escalated'].includes(c.status));
+  if (v === 'resolved') renderFilteredTable('resolvedTable', c => c.status === 'resolved');
+}
+
+function toast(msg, dur=2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderAll() {
+  renderStats();
+  renderAlertBanners();
+  renderDashboard();
+  renderSideCounts();
+  const activeView = document.querySelector('.view.active')?.id?.replace('view-','');
+  if (activeView === 'all') renderAllTable();
+  if (activeView === 'open') renderFilteredTable('openTable', c => ['open','in_progress'].includes(c.status));
+  if (activeView === 'escalated') renderFilteredTable('escalatedTable', c => ['escalated','admin_escalated'].includes(c.status));
+  if (activeView === 'resolved') renderFilteredTable('resolvedTable', c => c.status === 'resolved');
+}
+
+function renderStats() {
+  const total = complaints.length;
+  const breached = complaints.filter(c => c.is_breached).length;
+  const escalated = complaints.filter(c => ['escalated','admin_escalated'].includes(c.status)).length;
+  const resolved = complaints.filter(c => c.status === 'resolved').length;
+  const open = complaints.filter(c => ['open','in_progress'].includes(c.status)).length;
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${total}</div></div>
+    <div class="stat-card"><div class="stat-label">Open</div><div class="stat-value">${open}</div></div>
+    <div class="stat-card breach"><div class="stat-label">SLA Breached</div><div class="stat-value">${breached}</div></div>
+    <div class="stat-card escalated-stat"><div class="stat-label">Escalated</div><div class="stat-value">${escalated}</div></div>
+    <div class="stat-card"><div class="stat-label">Resolved</div><div class="stat-value">${resolved}</div></div>
+  `;
+}
+
+function renderAlertBanners() {
+  const adminEsc = complaints.filter(c => c.status === 'admin_escalated');
+  const supEsc = complaints.filter(c => c.status === 'escalated');
+
+  const adminBanner = document.getElementById('adminAlertBanner');
+  const supBanner = document.getElementById('supervisorAlertBanner');
+
+  adminBanner.innerHTML = adminEsc.length
+    ? `<div class="alert-banner error">🚨 ${adminEsc.length} complaint(s) escalated to Admin — immediate attention required</div>`
+    : '';
+
+  if (currentRole !== 'agent') {
+    supBanner.innerHTML = supEsc.length
+      ? `<div class="alert-banner warn">⚠️ ${supEsc.length} complaint(s) pending Supervisor review</div>`
+      : '';
+  } else {
+    supBanner.innerHTML = '';
+  }
+}
+
+function renderSideCounts() {
+  document.getElementById('countAll').textContent = complaints.length;
+  document.getElementById('countOpen').textContent = complaints.filter(c => ['open','in_progress'].includes(c.status)).length;
+  const esc = complaints.filter(c => ['escalated','admin_escalated'].includes(c.status)).length;
+  document.getElementById('countEscalated').textContent = esc;
+  document.getElementById('countResolved').textContent = complaints.filter(c => c.status === 'resolved').length;
+  // Bottom nav badge
+  const badge = document.getElementById('bnavBadge');
+  if (badge) { badge.textContent = esc; badge.style.display = esc > 0 ? 'block' : 'none'; }
+}
+
+function renderDashboard() {
+  const recent = [...complaints]
+    .filter(c => c.status !== 'resolved' && c.status !== 'closed')
+    .sort((a,b) => {
+      const order = { admin_escalated:0, escalated:1, critical:2, high:3, medium:4, low:5 };
+      return (order[a.status]??4) - (order[b.status]??4) || (order[a.priority]??4) - (order[b.priority]??4);
+    });
+  document.getElementById('dashboardTable').innerHTML = renderTable(recent.slice(0, 10));
+}
+
+function renderAllTable() {
+  let filtered = complaints;
+  if (activeFilter !== 'all') filtered = complaints.filter(c => c.priority === activeFilter);
+  document.getElementById('allTable').innerHTML = renderTable(filtered);
+}
+
+function renderFilteredTable(containerId, fn) {
+  const filtered = complaints.filter(fn);
+  document.getElementById(containerId).innerHTML = renderTable(filtered);
+}
+
+function renderTable(list) {
+  if (!list.length) return `<div class="empty-state"><div class="icon">📭</div><p>No complaints found</p></div>`;
+
+  const rows = list.map(c => {
+    const pct = c.progress_pct;
+    const barClass = slaBarClass(pct, c.is_breached);
+    const timeStr = c.status === 'resolved' ? 'Resolved' : c.is_breached ? '⚡ Breached' : formatTime(c.remaining_seconds);
+    const rowClass = c.status === 'admin_escalated' ? 'admin_escalated' : c.is_breached ? 'breached' : '';
+    return `
+      <div class="complaint-row ${rowClass}" onclick="openModal('${c.id}')">
+        <div class="id-cell">${c.id}</div>
+        <div class="title-cell">
+          ${c.title}
+          <div class="desc-preview">${c.description.substring(0,55)}…</div>
+        </div>
+        <div>${priorityBadge(c.priority)}</div>
+        <div>${statusBadge(c.status)}</div>
+        <div class="sla-cell">
+          <div>${timeStr}</div>
+          <div class="sla-bar-wrap"><div class="sla-bar ${barClass}" style="width:${pct}%"></div></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);">${formatDate(c.created_at)}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--muted);">${c.assigned_to || '—'}</div>
+      </div>`;
+  }).join('');
+
+  const cards = list.map(c => {
+    const pct = c.progress_pct;
+    const barClass = slaBarClass(pct, c.is_breached);
+    const timeStr = c.status === 'resolved' ? '✓ Resolved' : c.is_breached ? '⚡ Breached' : formatTime(c.remaining_seconds);
+    const cardClass = `priority-${c.priority} ${c.status === 'admin_escalated' ? 'admin_escalated' : c.is_breached ? 'breached' : ''}`;
+    return `
+      <div class="complaint-card ${cardClass}" onclick="openModal('${c.id}')">
+        <div class="card-top">
+          <div class="card-title">${c.title}</div>
+          ${priorityBadge(c.priority)}
+        </div>
+        <div class="card-meta">
+          ${statusBadge(c.status)}
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">#${c.id}</span>
+        </div>
+        <div class="card-desc">${c.description}</div>
+        <div class="sla-bar-wrap" style="margin-bottom:6px;"><div class="sla-bar ${barClass}" style="width:${pct}%"></div></div>
+        <div class="card-footer">
+          <span class="card-time">${formatDate(c.created_at)}</span>
+          <span class="card-sla ${c.is_breached ? 'breach' : ''}">${timeStr}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="complaint-table">
+      <div class="table-head">
+        <div>ID</div><div>Complaint</div><div>Priority</div><div>Status</div>
+        <div>SLA Timer</div><div>Logged</div><div>Assigned</div>
+      </div>
+      ${rows}
+    </div>
+    <div class="complaint-cards">${cards}</div>`;
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+function openModal(id) {
+  const c = complaints.find(x => x.id === id);
+  if (!c) return;
+
+  document.getElementById('modalTitle').textContent = c.title;
+  document.getElementById('modalId').innerHTML = `
+    <span style="margin-right:8px">#${c.id}</span>
+    ${priorityBadge(c.priority)} ${statusBadge(c.status)}`;
+
+  const pct = c.progress_pct;
+  const barClass = slaBarClass(pct, c.is_breached);
+  const remaining = c.status === 'resolved' ? 'Resolved ✓' : c.is_breached ? '⚡ SLA Breached' : formatTime(c.remaining_seconds);
+
+  let escalationHtml = '';
+  if (c.escalations && c.escalations.length) {
+    escalationHtml = `
+      <div style="margin-bottom:16px;">
+        <div class="form-label" style="margin-bottom:8px;">Escalation History</div>
+        ${c.escalations.map(e => `
+          <div class="escalation-item">
+            <div class="esc-dot ${e.to_role}"></div>
+            <div>
+              <div><strong>${e.from_role}</strong> → <strong>${e.to_role}</strong>: ${e.reason}</div>
+              <div class="esc-time">${formatDate(e.timestamp)}</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  let notesHtml = '';
+  if (c.notes && c.notes.length) {
+    notesHtml = `<div class="form-label" style="margin-bottom:6px;">Notes</div>
+      <div class="notes-list">${c.notes.map(n => `
+        <div class="note-item">
+          <div class="note-time">${formatDate(n.timestamp)}</div>
+          <div>${n.text}</div>
+        </div>`).join('')}</div>`;
+  }
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="sla-info-box">
+      <div class="sla-info-item">
+        <div class="label">SLA Window</div>
+        <div class="value">${SLA_HOURS[c.priority]}h (${c.priority})</div>
+      </div>
+      <div class="sla-info-item">
+        <div class="label">Remaining</div>
+        <div class="value ${c.is_breached?'breach':''}">${remaining}</div>
+      </div>
+      <div class="sla-info-item">
+        <div class="label">Registered</div>
+        <div class="value">${formatDate(c.created_at)}</div>
+      </div>
+      <div class="sla-info-item">
+        <div class="label">Deadline</div>
+        <div class="value ${c.is_breached?'breach':''}">${formatDate(c.deadline)}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:4px;"><div class="sla-bar-wrap" style="height:6px;"><div class="sla-bar ${barClass}" style="width:${pct}%;height:6px;"></div></div></div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:16px;">${Math.round(pct)}% of SLA consumed</div>
+
+    <div class="form-label">Description</div>
+    <div style="font-size:13px;margin-bottom:16px;line-height:1.6;">${c.description}</div>
+
+    ${escalationHtml}
+    ${notesHtml}
+  `;
+
+  // Footer buttons based on role and status
+  let btns = [];
+
+  if (c.status !== 'resolved' && c.status !== 'closed') {
+    if (currentRole === 'agent' || currentRole === 'supervisor' || currentRole === 'admin') {
+      btns.push(`<button class="btn btn-primary btn-sm" onclick="resolveComplaint('${c.id}')">Mark Resolved</button>`);
+    }
+    if (currentRole === 'agent' && !['escalated','admin_escalated'].includes(c.status)) {
+      btns.push(`<button class="btn btn-ghost btn-sm" onclick="markInProgress('${c.id}')">Mark In Progress</button>`);
+    }
+    if (currentRole === 'supervisor' && c.status !== 'admin_escalated') {
+      btns.push(`<button class="btn btn-danger btn-sm" onclick="escalateToAdmin('${c.id}')">Escalate to Admin</button>`);
+    }
+  }
+  btns.push(`<button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>`);
+
+  document.getElementById('modalFooter').innerHTML = btns.join('');
+  document.getElementById('modalBackdrop').style.display = 'flex';
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modalBackdrop')) {
+    document.getElementById('modalBackdrop').style.display = 'none';
+  }
+}
+
+async function resolveComplaint(id) {
+  complaints = complaints.map(c => c.id === id ? {...c, status:'resolved', resolved_at: new Date().toISOString()} : c);
+  await updateBackendStatus(id, 'resolved', 'Resolved by ' + currentRole);
+  closeModal();
+  renderAll();
+  toast('Complaint marked as resolved ✓');
+}
+
+async function markInProgress(id) {
+  complaints = complaints.map(c => c.id === id ? {...c, status:'in_progress'} : c);
+  await updateBackendStatus(id, 'in_progress', 'Picked up by agent');
+  closeModal();
+  renderAll();
+  toast('Status updated to In Progress');
+}
+
+async function escalateToAdmin(id) {
+  const c = complaints.find(x => x.id === id);
+  if (!c) return;
+  const esc = { from_role:'supervisor', to_role:'admin', reason:'Manual escalation by Supervisor', timestamp: new Date().toISOString() };
+  complaints = complaints.map(x => x.id === id ? {...x, status:'admin_escalated', escalations:[...x.escalations, esc]} : x);
+  await escalateBackend(id, 'supervisor', 'admin', 'Manual escalation by Supervisor');
+  closeModal();
+  renderAll();
+  toast('🚨 Escalated to Admin');
+}
+
+// ── Submit New Complaint ───────────────────────────────────────────────────
+async function submitComplaint() {
+  const title = document.getElementById('newTitle').value.trim();
+  const desc = document.getElementById('newDesc').value.trim();
+  const priority = document.querySelector('input[name="priority"]:checked')?.value;
+
+  if (!title) { toast('Please enter a title'); return; }
+  if (!desc)  { toast('Please enter a description'); return; }
+  if (!priority) { toast('Please select a priority'); return; }
+
+  const slaH = SLA_HOURS[priority];
+  const now = new Date();
+  const deadline = new Date(now.getTime() + slaH * 3600000);
+  const totalMs = slaH * 3600000;
+  const newC = {
+    id: Math.random().toString(36).substring(2,8).toUpperCase(),
+    title, description: desc, priority,
+    status: 'open',
+    created_at: now.toISOString(),
+    deadline: deadline.toISOString(),
+    assigned_to: 'agent_01',
+    resolved_at: null,
+    escalations: [], notes: [],
+    remaining_seconds: slaH * 3600,
+    progress_pct: 0,
+    is_breached: false
+  };
+
+  // Try backend first
+  const backendResult = await submitToBackend(title, desc, priority);
+  if (backendResult) {
+    complaints.unshift({ ...backendResult, remaining_seconds: slaH*3600, progress_pct:0, is_breached:false });
+  } else {
+    complaints.unshift(newC);
+  }
+
+  // Reset form
+  document.getElementById('newTitle').value = '';
+  document.getElementById('newDesc').value = '';
+
+  renderAll();
+  showView('dashboard');
+  toast(`Complaint registered — SLA: ${slaH}h window started`);
+}
+
+// ── Report ─────────────────────────────────────────────────────────────────
+function renderReport() {
+  document.getElementById('reportDate').textContent = new Date().toLocaleString('en-IN');
+  const total = complaints.length;
+  const resolved = complaints.filter(c => c.status === 'resolved').length;
+  const breached = complaints.filter(c => c.is_breached).length;
+  const onTime = resolved - complaints.filter(c => c.is_breached && c.status === 'resolved').length;
+  const rate = total ? Math.round((onTime / total) * 100) : 0;
+
+  const byP = {};
+  ['critical','high','medium','low'].forEach(p => {
+    const all = complaints.filter(c => c.priority === p);
+    byP[p] = { total: all.length, resolved: all.filter(c=>c.status==='resolved').length, breached: all.filter(c=>c.is_breached).length };
+  });
+
+  document.getElementById('reportContent').innerHTML = `
+    <div class="report-card">
+      <h3>Overview</h3>
+      <div class="report-row"><span>Total Complaints</span><span class="val">${total}</span></div>
+      <div class="report-row"><span>Resolved</span><span class="val">${resolved}</span></div>
+      <div class="report-row"><span>SLA Breaches</span><span class="val" style="color:var(--critical)">${breached}</span></div>
+      <div class="report-row"><span>Escalated to Supervisor</span><span class="val">${complaints.filter(c=>c.status==='escalated').length}</span></div>
+      <div class="report-row"><span>Escalated to Admin</span><span class="val" style="color:var(--critical)">${complaints.filter(c=>c.status==='admin_escalated').length}</span></div>
+      <div class="report-row"><span>SLA Compliance Rate</span><span class="val">${rate}%</span></div>
+    </div>
+    <div class="report-card">
+      <h3>By Priority</h3>
+      ${['critical','high','medium','low'].map(p => `
+        <div class="report-row">
+          <span>${priorityBadge(p)}</span>
+          <span class="val" style="display:flex;gap:12px;">
+            <span>${byP[p].total} total</span>
+            <span style="color:var(--low)">${byP[p].resolved} resolved</span>
+            <span style="color:var(--critical)">${byP[p].breached} breached</span>
+          </span>
+        </div>`).join('')}
+    </div>
+    <div class="report-card">
+      <h3>SLA Thresholds</h3>
+      <div class="report-row"><span>🔴 Critical</span><span class="val">1 hour</span></div>
+      <div class="report-row"><span>🟠 High</span><span class="val">24 hours</span></div>
+      <div class="report-row"><span>🟡 Medium</span><span class="val">72 hours</span></div>
+      <div class="report-row"><span>🟢 Low</span><span class="val">7 days</span></div>
+    </div>
+  `;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadComplaints();
+// Refresh every 30 seconds to update live timers
+setInterval(loadComplaints, 30000);
+</script>
+</body>
+</html>
